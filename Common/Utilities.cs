@@ -141,48 +141,5 @@ namespace Azure.ResourceManager.Samples.Common
             Utilities.Log($"Created a public IP address: {publicIPLro.Value.Data.Name}");
             return publicIPLro.Value;
         }
-
-        public static VirtualMachineData GetDefaultVMInputData(ResourceGroupResource resourceGroup, string vmName) =>
-            new VirtualMachineData(resourceGroup.Data.Location)
-            {
-                HardwareProfile = new VirtualMachineHardwareProfile() { VmSize = VirtualMachineSizeType.StandardB4Ms },
-                StorageProfile = new VirtualMachineStorageProfile()
-                {
-                    ImageReference = new ImageReference()
-                    {
-                        Publisher = "Canonical",
-                        Offer = "UbuntuServer",
-                        Sku = "16.04-LTS",
-                        Version = "latest",
-                    },
-                    OSDisk = new VirtualMachineOSDisk(DiskCreateOptionType.FromImage)
-                    {
-                        OSType = SupportedOperatingSystemType.Linux,
-                        Caching = CachingType.ReadWrite,
-                        ManagedDisk = new VirtualMachineManagedDisk()
-                        {
-                            StorageAccountType = StorageAccountType.StandardLrs
-                        }
-                    },
-                },
-                OSProfile = new VirtualMachineOSProfile()
-                {
-                    AdminUsername = CreateUsername(),
-                    ComputerName = vmName,
-                    LinuxConfiguration = new LinuxConfiguration()
-                    {
-                        DisablePasswordAuthentication = true,
-                        SshPublicKeys =
-                        {
-                    new SshPublicKeyConfiguration()
-                    {
-                        Path = $"/home/{CreateUsername()}/.ssh/authorized_keys",
-                        KeyData = SshKey,
-                    }
-                        }
-                    }
-                },
-                NetworkProfile = new VirtualMachineNetworkProfile() { }
-            };
     }
 }
