@@ -37,10 +37,11 @@ namespace ManageVirtualMachineWithDisk
         public static async Task RunSample(ArmClient client)
         {
             string linuxVmName1 = Utilities.CreateRandomName("VM1");
-            string rgName = Utilities.CreateRandomName("rgCOMV");
+            string rgName = Utilities.CreateRandomName("ComputeSampleRG");
             string vnetName = Utilities.CreateRandomName("vnet");
             string nicName = Utilities.CreateRandomName("nic");
             string publicIpDnsLabel = Utilities.CreateRandomName("pip");
+            string osDiskName = Utilities.CreateRandomName("OsDisk");
             string diskName1 = Utilities.CreateRandomName("disk1-");
             string diskName2 = Utilities.CreateRandomName("disk2-");
             string diskName3 = Utilities.CreateRandomName("disk3-");
@@ -87,13 +88,13 @@ namespace ManageVirtualMachineWithDisk
 
                 Utilities.Log("Pre-creating some resources that the VM depends on");
 
-                Utilities.Log("Creating virtual network");
+                // Creating a virtual network
                 var vnet = await Utilities.CreateVirtualNetwork(resourceGroup, vnetName);
 
-                Utilities.Log("Creating public ip");
+                // Creating public ip
                 var pip = await Utilities.CreatePublicIP(resourceGroup, publicIpDnsLabel);
 
-                Utilities.Log("Creating network interface");
+                // Creating network interface
                 var nic = await Utilities.CreateNetworkInterface(resourceGroup, vnet.Data.Subnets[0].Id, pip.Id, nicName);
 
                 Utilities.Log("Creating a managed Linux VM");
@@ -128,10 +129,10 @@ namespace ManageVirtualMachineWithDisk
                         Primary = true,
                     });
 
-                // Begin: Managed data disks
+                // Managed data disks
                 linuxVMInput.StorageProfile.OSDisk = new VirtualMachineOSDisk(DiskCreateOptionType.FromImage)
                 {
-                    Name = "disk",
+                    Name = osDiskName,
                     OSType = SupportedOperatingSystemType.Linux,
                     Caching = CachingType.ReadWrite,
                     ManagedDisk = new VirtualMachineManagedDisk()
@@ -164,7 +165,6 @@ namespace ManageVirtualMachineWithDisk
                     Name = disk3.Data.Name,
                     Caching = CachingType.ReadWrite,
                     WriteAcceleratorEnabled = false,
-                    DeleteOption = DiskDeleteOptionType.Detach,
                     ManagedDisk = new VirtualMachineManagedDisk()
                     {
                         Id = disk3.Id,
@@ -175,6 +175,11 @@ namespace ManageVirtualMachineWithDisk
                 VirtualMachineResource linuxVM = linuxVmLro.Value;
 
                 Utilities.Log("Created a Linux VM with managed OS and data disks: " + linuxVM.Id.Name);
+                Utilities.Log("List all data disks status:");
+                foreach (var item in linuxVM.Data.StorageProfile.DataDisks)
+                {
+                    Utilities.Log($"\t{item.Name}--{item.CreateOption.ToString()}");
+                }
 
                 //======================================================================
                 // Update the virtual machine by detaching two data disks with lun 3 and 4
@@ -183,31 +188,24 @@ namespace ManageVirtualMachineWithDisk
                 Utilities.Log("Detaching two data disks with lun 3 and 4...");
 
                 VirtualMachineData updateVmInput = linuxVM.Data;
-                updateVmInput.StorageProfile.DataDisks.First(item => item.Lun == 3).DeleteOption = DiskDeleteOptionType.Detach;
-                //updateVmInput.StorageProfile.DataDisks.First(item => item.Lun == 4).CreateOption = DiskCreateOptionType.Attach;
-                updateVmInput.StorageProfile.DataDisks.First(item => item.Lun == 4).DeleteOption = DiskDeleteOptionType.Detach;
+                updateVmInput.StorageProfile.DataDisks.Remove(updateVmInput.StorageProfile.DataDisks.Where(item => item.Lun == 3).First());
+                updateVmInput.StorageProfile.DataDisks.Remove(updateVmInput.StorageProfile.DataDisks.Where(item => item.Lun == 4).First());
                 linuxVmLro = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, linuxVmName1, updateVmInput);
                 linuxVM = linuxVmLro.Value;
-
-                //linuxVM.Update()
-                //        .WithoutDataDisk(3)
-                //        .WithoutDataDisk(4)
-                //        .WithNewDataDisk(200)
-                //        .Apply();
 
                 Utilities.Log("Updated Linux VM: " + linuxVM.Id.Name);
                 Utilities.Log("List all data disks status:");
                 foreach (var item in linuxVM.Data.StorageProfile.DataDisks)
                 {
-                    Utilities.Log($"{item.Name}--{item.CreateOption.ToString()}");
+                    Utilities.Log($"\t{item.Name}--{item.CreateOption.ToString()}");
                 }
 
                 // ======================================================================
                 // Delete a managed disk
 
-                Utilities.Log("Delete managed disk: " + disk3.Id);
+                Utilities.Log("Delete managed disk: " + disk1.Id.Name);
 
-                await disk3.DeleteAsync(WaitUntil.Completed);
+                await disk1.DeleteAsync(WaitUntil.Completed);
 
                 Utilities.Log("Deleted managed disk");
 
@@ -219,6 +217,7 @@ namespace ManageVirtualMachineWithDisk
                 await linuxVM.DeallocateAsync(WaitUntil.Completed);
 
                 Utilities.Log("De-allocated Linux VM");
+                Utilities.Log();
 
                 //======================================================================
                 // Resize the OS and Data Disks
@@ -231,20 +230,23 @@ namespace ManageVirtualMachineWithDisk
                     Utilities.Log($"Data disk {item.Name}: {item.DiskSizeGB}");
                 }
 
-                updateVmInput = linuxVM.Data;
-                updateVmInput.StorageProfile.OSDisk.DiskSizeGB = 2 * updateVmInput.StorageProfile.OSDisk.DiskSizeGB;
+                // Update os disk
+                var osDisk = await resourceGroup.GetManagedDisks().GetAsync(osDiskName);
+                ManagedDiskData osdiskUpdateInput = osDisk.Value.Data;
+                osdiskUpdateInput.DiskSizeGB = osdiskUpdateInput.DiskSizeGB * 2;
+                var osDiskLro = await resourceGroup.GetManagedDisks().CreateOrUpdateAsync(WaitUntil.Completed, osDiskName, osdiskUpdateInput);
+                Utilities.Log("OSDisk updated");
+                Utilities.Log($"OSDisk size: {osDiskLro.Value.Data.DiskSizeGB}");
+
+                // Update data disks
                 foreach (var vmDataDisk in updateVmInput.StorageProfile.DataDisks)
                 {
-                    vmDataDisk.DiskSizeGB = vmDataDisk.DiskSizeGB + 10;
-                }
-                linuxVmLro = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, linuxVmName1, updateVmInput);
-                linuxVM = linuxVmLro.Value;
-
-                Utilities.Log("All disks updated");
-                Utilities.Log($"OSDisk size: {linuxVM.Data.StorageProfile.OSDisk.DiskSizeGB}");
-                foreach (var item in linuxVM.Data.StorageProfile.DataDisks)
-                {
-                    Utilities.Log($"Data disk {item.Name}: {item.DiskSizeGB}");
+                    var dataDisk = await resourceGroup.GetManagedDisks().GetAsync(vmDataDisk.Name);
+                    ManagedDiskData dataDiskUpdateInput = dataDisk.Value.Data;
+                    dataDiskUpdateInput.DiskSizeGB = dataDiskUpdateInput.DiskSizeGB + 10;
+                    var dataDiskLro = await resourceGroup.GetManagedDisks().CreateOrUpdateAsync(WaitUntil.Completed, vmDataDisk.Name, dataDiskUpdateInput);
+                    Utilities.Log($"OSDisk {vmDataDisk.Name} updated");
+                    Utilities.Log($"Data disk {dataDiskLro.Value.Data.Name}: {dataDiskLro.Value.Data.DiskSizeGB}");
                 }
 
                 //======================================================================
@@ -252,7 +254,7 @@ namespace ManageVirtualMachineWithDisk
 
                 Utilities.Log("Starting Linux VM");
 
-                await linuxVM.RestartAsync(WaitUntil.Completed);
+                await linuxVM.PowerOnAsync(WaitUntil.Completed);
 
                 Utilities.Log("Started Linux VM");
             }

@@ -13,7 +13,6 @@ extensions:
 
  Azure Compute sample for managing virtual machines -
   - Create a virtual machine with
-      - Implicit data disks
       - Existing data disks
   - Update a virtual machine
       - Attach data disks
