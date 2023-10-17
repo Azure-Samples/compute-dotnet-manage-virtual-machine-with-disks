@@ -45,6 +45,7 @@ namespace ManageVirtualMachineWithDisk
             string diskName1 = Utilities.CreateRandomName("disk1-");
             string diskName2 = Utilities.CreateRandomName("disk2-");
             string diskName3 = Utilities.CreateRandomName("disk3-");
+            string diskName4 = Utilities.CreateRandomName("disk4-");
 
             try
             {
@@ -82,6 +83,10 @@ namespace ManageVirtualMachineWithDisk
                 var diskLro3 = await resourceGroup.GetManagedDisks().CreateOrUpdateAsync(WaitUntil.Completed, diskName3, diskInput);
                 ManagedDiskResource disk3 = diskLro3.Value;
                 Utilities.Log($"Created managed disk: {disk3.Data.Name}");
+
+                var diskLro4 = await resourceGroup.GetManagedDisks().CreateOrUpdateAsync(WaitUntil.Completed, diskName4, diskInput);
+                ManagedDiskResource disk4 = diskLro4.Value;
+                Utilities.Log($"Created managed disk: {disk4.Data.Name}");
 
                 //======================================================================
                 // Create a Linux VM using a PIR image with managed OS and Data disks
@@ -135,6 +140,7 @@ namespace ManageVirtualMachineWithDisk
                     Name = osDiskName,
                     OSType = SupportedOperatingSystemType.Linux,
                     Caching = CachingType.ReadWrite,
+                    DiskSizeGB = 1024,
                     ManagedDisk = new VirtualMachineManagedDisk()
                     {
                         StorageAccountType = StorageAccountType.StandardLrs
@@ -182,14 +188,26 @@ namespace ManageVirtualMachineWithDisk
                 }
 
                 //======================================================================
-                // Update the virtual machine by detaching two data disks with lun 3 and 4
+                // Update the virtual machine by detaching two data disks with lun 3 and 4 and adding one
 
                 Utilities.Log("Updating Linux VM");
-                Utilities.Log("Detaching two data disks with lun 3 and 4...");
+                Utilities.Log("Detaching two data disks with lun 3 and 4 and adding one...");
 
                 VirtualMachineData updateVmInput = linuxVM.Data;
                 updateVmInput.StorageProfile.DataDisks.Remove(updateVmInput.StorageProfile.DataDisks.Where(item => item.Lun == 3).First());
                 updateVmInput.StorageProfile.DataDisks.Remove(updateVmInput.StorageProfile.DataDisks.Where(item => item.Lun == 4).First());
+                updateVmInput.StorageProfile.DataDisks.Add(
+                    new VirtualMachineDataDisk(11, DiskCreateOptionType.Attach)
+                    {
+                        Name = disk4.Data.Name,
+                        Caching = CachingType.ReadWrite,
+                        WriteAcceleratorEnabled = false,
+                        DiskSizeGB = 64,
+                        ManagedDisk = new VirtualMachineManagedDisk()
+                        {
+                            Id = disk4.Id,
+                        }
+                    });
                 linuxVmLro = await resourceGroup.GetVirtualMachines().CreateOrUpdateAsync(WaitUntil.Completed, linuxVmName1, updateVmInput);
                 linuxVM = linuxVmLro.Value;
 
